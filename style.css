@@ -1,0 +1,141 @@
+body {
+  margin: 0;
+  background: radial-gradient(circle at center, #222, #111);
+  color: white;
+  font-family: sans-serif;
+  text-align: center;
+  overflow-x: hidden;
+}
+
+.container {
+  width: 600px;
+  margin: auto;
+  position: relative;
+  padding: 20px;
+}
+
+#topBar {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.gauge {
+  width: 200px;
+  height: 12px;
+  background: #333;
+  margin: 10px auto;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.gauge-fill {
+  height: 100%;
+  width: 100%;
+  transition: width 0.3s ease;
+}
+
+.enemy-fill { background: #ff5555; }
+.player-fill { background: #55ff88; }
+
+.hands {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin: 20px;
+}
+
+.hand {
+  width: 95px;
+  height: 95px;
+  line-height: 95px;
+  font-size: 32px;
+  border-radius: 14px;
+  background: #444;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s;
+  user-select: none;
+  position: relative;
+}
+
+.hand:hover {
+  transform: scale(1.1);
+}
+
+.hand.selected {
+  background: gold;
+  color: black;
+  box-shadow: 0 0 15px gold;
+}
+
+.hand.zero {
+  background: gray;
+  cursor: default;
+}
+
+.attack {
+  animation: attackAnim 0.2s ease;
+}
+
+@keyframes attackAnim {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+.hit {
+  animation: hitAnim 0.3s ease;
+}
+
+@keyframes hitAnim {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  50% { transform: translateX(6px); }
+  75% { transform: translateX(-4px); }
+  100% { transform: translateX(0); }
+}
+
+.destroy {
+  animation: destroyAnim 0.4s ease;
+}
+
+@keyframes destroyAnim {
+  0% { transform: scale(1); background: #ff4444; }
+  50% { transform: scale(1.5); background: white; }
+  100% { transform: scale(1); background: gray; }
+}
+
+.damage {
+  position: absolute;
+  left: 35px;
+  top: 20px;
+  color: #ff5555;
+  font-weight: bold;
+  animation: popup 0.8s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes popup {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-40px); }
+}
+
+#flashLayer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: transparent;
+}
+
+.flash {
+  animation: flashAnim 0.2s ease;
+}
+
+@keyframes flashAnim {
+  0% { background: rgba(255,255,255,0.3); }
+  100% { background: transparent; }
+}
+
+.boss {
+  background: radial-gradient(circle at center, #330000, #110000);
+}
