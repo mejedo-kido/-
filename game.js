@@ -1,15 +1,16 @@
-/* game.js — enemy skills visible UI + enemy hands fixed (no stage scaling)
-   - 敵の手はステージで増えない（rand(1,2) 固定）
-   - 敵スキルを付与し、戦闘中に使用。スキルは画面上に表示される。
+/* game.js — Skill system expansion: new categories (disrupt / team buff / counter),
+   improved behaviors, and enhanced UI display for enemy skills.
+   - Enemy hands remain fixed (rand 1..2) and enemies still use skills, but no extra SE/animation for enemy skill usage.
+   - Player skills: added active "disrupt", turn "teamPower", event "counter".
 */
 
-const MAX_VALUE = 4;
-const STORAGE_KEY = 'fd_unlocked_skills_v2'; // skill storage
+const STORAGE_KEY = 'fd_unlocked_skills_v2';
 const BEST_KEY = 'fd_best_stage_v1';
+const MAX_VALUE = 4;
 const EQUIP_SLOTS = 3;
 const MAX_SKILL_LEVEL = 3;
 
-/* ---------- SKILL POOL ---------- */
+/* ---------- SKILL POOL (extended) ---------- */
 const SKILL_POOL = [
   { id:'power', type:'passive', baseDesc:'攻撃 +1 / level', name:'💥 パワーアップ' },
   { id:'guard', type:'passive', baseDesc:'敵攻撃 -1 / level', name:'🛡 ガード' },
@@ -20,10 +21,15 @@ const SKILL_POOL = [
   { id:'pierce', type:'passive', baseDesc:'破壊閾値を -level（最小2）', name:'🔩 ピアス' },
   { id:'chain', type:'combo', baseDesc:'敵手を破壊した次の攻撃 +level', name:'🔗 チェイン' },
   { id:'fortify', type:'turn', baseDesc:'自分の防御+1 for 2 turns ×level', name:'🏰 フォーティファイ' },
-  { id:'revenge', type:'event', baseDesc:'自分の手が0になったら即ヒール +level', name:'🔥 リベンジ' }
+  { id:'revenge', type:'event', baseDesc:'自分の手が0になったら即ヒール +level', name:'🔥 リベンジ' },
+
+  // --- NEW SKILLS ---
+  { id:'disrupt', type:'active', baseDesc:'敵の手を -(1+level)（直接減少）', name:'🪓 ディスラプト' }, // 妨害系（active）
+  { id:'teamPower', type:'turn', baseDesc:'味方全体の攻撃 +level（2*level ターン）', name:'🌟 チームパワー' }, // バフ系（turn）
+  { id:'counter', type:'event', baseDesc:'攻撃を受けた時、相手の手を +level して反撃', name:'↺ カウンター' } // カウンター（event）
 ];
 
-/* ---------- game state (added enemy skill storage & buffs) ---------- */
+/* ---------- game state ---------- */
 const gameState = {
   stage: 1,
   isBoss: false,
@@ -32,14 +38,14 @@ const gameState = {
   playerTurn: true,
   unlockedSkills: [],
   equippedSkills: [],
-  pendingActiveUse: null,
+  pendingActiveUse: null,    // { id, idx } pending active skill selection
   doubleMultiplier: 1,
   turnBuffs: [],
   bestStage: 1,
   inTitle: true,
-  enemySkills: [],            // 敵が持つスキル
-  enemyDoubleMultiplier: 1,   // 敵の次攻撃倍率
-  enemyTurnBuffs: []          // 敵のターンバフ（fortify 等）
+  enemySkills: [],
+  enemyDoubleMultiplier: 1,
+  enemyTurnBuffs: []
 };
 
 let selectedHand = null;
@@ -59,7 +65,7 @@ const equippedList = document.getElementById('equippedList');
 const unlockedList = document.getElementById('unlockedList');
 const flashLayer = document.getElementById('flashLayer');
 
-const enemySkillArea = document.getElementById('enemySkillArea'); // ← 敵スキル表示領域
+const enemySkillArea = document.getElementById('enemySkillArea');
 
 const hands = {
   playerLeft: document.getElementById('player-left'),
@@ -75,7 +81,7 @@ const bars = {
   enemyRight: document.getElementById('enemy-right-bar')
 };
 
-/* ---------- SE (optional) ---------- */
+/* ---------- SE (keep for player actions) ---------- */
 const SE = {
   click: typeof Audio !== 'undefined' ? new Audio('assets/sounds/click.mp3') : null,
   attack: typeof Audio !== 'undefined' ? new Audio('assets/sounds/attack.mp3') : null,
@@ -113,7 +119,6 @@ function loadUnlocked(){
   } catch(e){}
   return null;
 }
-
 function loadBest(){ try { const b = Number(localStorage.getItem(BEST_KEY)); return Number.isFinite(b) && b > 0 ? b : 1; } catch(e){ return 1; } }
 function saveBest(){ try { localStorage.setItem(BEST_KEY, String(gameState.bestStage)); } catch(e){} }
 
@@ -122,8 +127,6 @@ function seedInitialUnlocks(){
   gameState.unlockedSkills = [{ id:'power', level:1 }, { id:'guard', level:1 }];
   saveUnlocked();
 }
-
-/* Reset: clear stored unlocked skills and re-seed initial skills */
 function resetGame(){
   if(!confirm('スキルのアンロックを初期状態にリセットします。\nよろしいですか？')) return;
   try { localStorage.removeItem(STORAGE_KEY); } catch(e){}
@@ -164,16 +167,8 @@ function initGame(){
   startButton.onclick = () => { playSE('click', 0.5); startGame(); };
   resetButton.onclick = () => { playSE('click', 0.5); resetGame(); };
 }
-
-function showTitle(){
-  gameState.inTitle = true;
-  if(titleScreen) titleScreen.style.display = 'flex';
-  bestStageValue.textContent = gameState.bestStage;
-}
-function hideTitle(){
-  gameState.inTitle = false;
-  if(titleScreen) titleScreen.style.display = 'none';
-}
+function showTitle(){ gameState.inTitle = true; if(titleScreen) titleScreen.style.display = 'flex'; bestStageValue.textContent = gameState.bestStage; }
+function hideTitle(){ gameState.inTitle = false; if(titleScreen) titleScreen.style.display = 'none'; }
 
 /* ---------- start / stage flow ---------- */
 function startGame(){
@@ -198,17 +193,16 @@ function startBattle(){
   gameState.turnBuffs = [];
   gameState.playerTurn = true;
 
-  // player always full at stage start
+  // player full
   gameState.player.left = 1;
   gameState.player.right = 1;
 
   gameState.isBoss = (gameState.stage % 3 === 0);
   document.body.classList.toggle('boss', gameState.isBoss);
 
-  // === IMPORTANT CHANGE ===
-  // Enemy hands: no stage-based increase. Keep small fixed values (variety: 1 or 2).
-  gameState.enemy.left = rand(1, 2);
-  gameState.enemy.right = rand(1, 2);
+  // Enemy hands fixed (no stage scaling)
+  gameState.enemy.left = rand(1,2);
+  gameState.enemy.right = rand(1,2);
 
   // reset enemy buffs & multiplier, then assign skills
   gameState.enemyDoubleMultiplier = 1;
@@ -222,16 +216,14 @@ function startBattle(){
 
 /* ---------- assign enemy skills ---------- */
 function assignEnemySkills(){
-  // pick a few skills from SKILL_POOL for the enemy (avoid revenge by default)
-  const possible = SKILL_POOL.slice().filter(s => s.id !== 'revenge');
-  // scale skill count modestly with stage (but not hands)
+  const possible = SKILL_POOL.slice().filter(s => s.id !== 'revenge'); // exclude revenge by default
+  // scale skill count modestly with stage
   const skillCount = Math.min(3, 1 + Math.floor(gameState.stage / 4));
   const chosen = [];
   let pool = possible.slice();
   while(chosen.length < skillCount && pool.length > 0){
     const idx = rand(0, pool.length - 1);
     const s = pool.splice(idx, 1)[0];
-    // level scales gently with stage
     const level = Math.min(MAX_SKILL_LEVEL, 1 + Math.floor(gameState.stage / 6));
     chosen.push({ id: s.id, level, type: s.type, name: s.name, remainingCooldown: 0 });
   }
@@ -239,7 +231,7 @@ function assignEnemySkills(){
   updateEnemySkillUI();
 }
 
-/* ---------- equip selection UI (unchanged) ---------- */
+/* ---------- equip selection UI ---------- */
 function showEquipSelection(){
   skillSelectArea.innerHTML = '';
   messageArea.textContent = `装備スキルを最大${EQUIP_SLOTS}つ選んで「確定」してください`;
@@ -304,7 +296,7 @@ function commitEquips(){
   skillInfo.textContent = 'Equipped: ' + (gameState.equippedSkills.map(s=>`${s.name} Lv${s.level}`).join(', ') || '—');
 }
 
-/* ---------- rendering (unchanged) ---------- */
+/* ---------- rendering ---------- */
 function renderEquipped(){
   equippedList.innerHTML = '';
   if(!gameState.equippedSkills || gameState.equippedSkills.length === 0){
@@ -332,6 +324,17 @@ function renderEquipped(){
         } else if(s.id === 'heal'){
           gameState.pendingActiveUse = { id: 'heal', idx };
           messageArea.textContent = 'ヒール使用：回復する味方の手を選んでください';
+        } else if(s.id === 'disrupt'){
+          // disrupt: target enemy hand to reduce (player active)
+          gameState.pendingActiveUse = { id: 'disrupt', idx };
+          messageArea.textContent = 'ディスラプト使用：敵の手を選んでください';
+        } else if(s.id === 'teamPower'){
+          s.used = true;
+          const duration = 2 * s.level;
+          s.remainingTurns = duration;
+          applyTurnBuff('teamPower', s.level, duration);
+          messageArea.textContent = `${s.name} を ${duration} ターン有効化しました（味方全体の攻撃 +${s.level}）`;
+          renderEquipped();
         } else if(s.type === 'turn'){
           s.used = true;
           const duration = 2 * s.level;
@@ -343,6 +346,14 @@ function renderEquipped(){
       };
       const div = document.createElement('div');
       div.className = 'skill-active';
+      // display cooldown / remainingTurns
+      if(s.remainingTurns && s.remainingTurns > 0){
+        const meta = document.createElement('div');
+        meta.style.fontSize = '12px';
+        meta.style.opacity = '0.9';
+        meta.textContent = `(${s.remainingTurns}ターン)`;
+        card.appendChild(meta);
+      }
       div.appendChild(btn);
       card.appendChild(div);
     }
@@ -374,22 +385,31 @@ function updateEnemySkillUI(){
     return;
   }
 
-  const skillTexts = gameState.enemySkills.map(s => {
-    let txt = `${s.name} Lv${s.level}`;
-    if(s.remainingCooldown && s.remainingCooldown > 0){
-      txt += ` (CD:${s.remainingCooldown})`;
-    }
-    return txt;
+  // color coding per type (simple inline styles)
+  const typeColor = {
+    passive: '#ddd',
+    active: '#ffd166',
+    turn: '#7cc7ff',
+    combo: '#d7b3ff',
+    event: '#ff9e9e'
+  };
+
+  const parts = gameState.enemySkills.map(s => {
+    const cd = s.remainingCooldown && s.remainingCooldown > 0 ? ` (CD:${s.remainingCooldown})` : '';
+    const color = typeColor[s.type] || '#fff';
+    return `<span style="color:${color}; font-weight:700; margin-right:6px">${s.name} Lv${s.level}${cd}</span>`;
   });
 
+  // show enemy buffs
   const buffs = gameState.enemyTurnBuffs.map(tb => {
     if(tb.skillId === 'fortify') return `防御+${tb.payload.value} (${tb.remainingTurns})`;
     if(tb.skillId === 'chain') return `次攻撃+${tb.payload.value} (${tb.remainingTurns})`;
+    if(tb.skillId === 'teamPower') return `味方全体+${tb.payload.value} (${tb.remainingTurns})`;
     return '';
-  }).filter(v => v !== '');
+  }).filter(Boolean);
 
   const buffText = buffs.length ? ` | Buffs: ${buffs.join(', ')}` : '';
-  enemySkillArea.textContent = `敵スキル: ${skillTexts.join(', ')}${buffText}`;
+  enemySkillArea.innerHTML = `敵スキル: ${parts.join(' ')}${buffText}`;
 }
 
 /* ---------- UI update ---------- */
@@ -400,7 +420,7 @@ function updateUI(){
   updateHand('playerRight', gameState.player.right);
   updateHand('enemyLeft', gameState.enemy.left);
   updateHand('enemyRight', gameState.enemy.right);
-  updateEnemySkillUI(); // ← 敵スキル UI 更新
+  updateEnemySkillUI();
 }
 
 function updateHand(key, value){
@@ -421,7 +441,17 @@ function showDamage(targetEl, val, color='#ff6b6b'){
   if(!targetEl) return;
   const d = document.createElement('div');
   d.className = 'damage';
-  d.textContent = `+${val}`;
+  // show sign-aware numeric popup
+  d.textContent = (val >= 0 ? `+${val}` : `${val}`);
+  d.style.color = color;
+  targetEl.appendChild(d);
+  setTimeout(()=> d.remove(), 820);
+}
+function showPopupText(targetEl, text, color='#fff'){
+  if(!targetEl) return;
+  const d = document.createElement('div');
+  d.className = 'damage';
+  d.textContent = text;
   d.style.color = color;
   targetEl.appendChild(d);
   setTimeout(()=> d.remove(), 820);
@@ -452,6 +482,7 @@ function getEquippedLevel(id){
 function applyTurnBuff(skillId, level, duration){
   let payload = {};
   if(skillId === 'fortify') payload = { type:'guardBoost', value: level };
+  else if(skillId === 'teamPower') payload = { type:'teamPower', value: level };
   else payload = { type: skillId, value: level };
   gameState.turnBuffs.push({ skillId, remainingTurns: duration, payload });
 }
@@ -465,6 +496,7 @@ function tickTurnBuffs(){
 function applyEnemyTurnBuff(skillId, level, duration){
   let payload = {};
   if(skillId === 'fortify') payload = { type:'enemyGuardBoost', value: level };
+  else if(skillId === 'teamPower') payload = { type:'teamPower', value: level };
   else payload = { type: skillId, value: level };
   gameState.enemyTurnBuffs.push({ skillId, remainingTurns: duration, payload });
 }
@@ -483,12 +515,14 @@ function computePlayerAttackBonus(handKey){
     if(s.id === 'berserk' && toNum(gameState.player[handKey]) === 4) bonus += s.level;
   });
   gameState.turnBuffs.forEach(tb => {
-    if(tb.payload && tb.payload.type === 'chainBoost') bonus += tb.payload.value;
+    if(tb.payload){
+      if(tb.payload.type === 'chainBoost') bonus += tb.payload.value;
+      if(tb.payload.type === 'teamPower') bonus += tb.payload.value;
+    }
   });
   return bonus;
 }
 function computeEnemyAttackReduction(){
-  // reduction from player's guard and fortify-type buffs
   let reduction = 0;
   (gameState.equippedSkills || []).forEach(s => {
     if(s.type === 'passive' && s.id === 'guard') reduction += s.level;
@@ -497,7 +531,6 @@ function computeEnemyAttackReduction(){
   return reduction;
 }
 function computeEnemyAttackBonus(attackerHandKey){
-  // enemy passive bonuses (power / berserk) from enemySkills
   let bonus = 0;
   (gameState.enemySkills || []).forEach(s => {
     if(s.type !== 'passive') return;
@@ -506,13 +539,13 @@ function computeEnemyAttackBonus(attackerHandKey){
   });
   gameState.enemyTurnBuffs.forEach(tb => {
     if(tb.payload && tb.payload.type === 'chainBoost') bonus += tb.payload.value;
+    if(tb.payload && tb.payload.type === 'teamPower') bonus += tb.payload.value;
   });
   return bonus;
 }
 
 /* ---------- destroy threshold (attacker-aware) ---------- */
 function getDestroyThreshold(attackerIsPlayer = true){
-  // base threshold 5, lowered by pierce on attacker side (min 2)
   let threshold = 5;
   if(attackerIsPlayer){
     (gameState.equippedSkills || []).forEach(s => {
@@ -526,7 +559,7 @@ function getDestroyThreshold(attackerIsPlayer = true){
   return threshold;
 }
 
-/* ---------- active handlers ---------- */
+/* ---------- active handlers (player) ---------- */
 function applyPendingActiveOnPlayer(side){
   if(!gameState.pendingActiveUse) return;
   const pending = gameState.pendingActiveUse;
@@ -548,6 +581,35 @@ function applyPendingActiveOnPlayer(side){
   }
 }
 
+/* ---------- active handlers (player targeting enemy) ---------- */
+function applyPendingActiveOnEnemy(side){
+  if(!gameState.pendingActiveUse) return;
+  const pending = gameState.pendingActiveUse;
+  const sk = gameState.equippedSkills[pending.idx];
+  if(!sk || sk.used){ gameState.pendingActiveUse = null; messageArea.textContent = 'そのスキルは使用できません'; return; }
+
+  if(pending.id === 'disrupt'){
+    // subtract (1+level) from enemy target
+    const amount = 1 + sk.level;
+    const key = side;
+    const el = hands[key === 'left' ? 'enemyLeft' : 'enemyRight'];
+    const cur = toNum(gameState.enemy[key]);
+    let newVal = cur - amount;
+    if(newVal <= 0){
+      newVal = 0;
+      animateDestroy(el);
+    }
+    gameState.enemy[key] = Math.max(0, newVal);
+    // show negative popup
+    showPopupText(el, `-${amount}`, '#ff9e9e');
+    sk.used = true;
+    messageArea.textContent = `${sk.name} を ${key} に使用しました (-${amount})`;
+    gameState.pendingActiveUse = null;
+    updateUI();
+    renderEquipped();
+  }
+}
+
 /* ---------- player attack ---------- */
 function playerAttack(targetSide){
   if(skillSelectArea && skillSelectArea.children.length > 0){
@@ -560,6 +622,12 @@ function playerAttack(targetSide){
   const attackerKey = selectedHand;
   const attackerEl = hands[attackerKey === 'left' ? 'playerLeft' : 'playerRight'];
   const targetEl = hands[targetSide === 'left' ? 'enemyLeft' : 'enemyRight'];
+
+  // if pending active is a disrupt (player targets enemy), handle it separately
+  if(gameState.pendingActiveUse && gameState.pendingActiveUse.id === 'disrupt'){
+    applyPendingActiveOnEnemy(targetSide);
+    return;
+  }
 
   playSE('attack', 0.7);
   animateAttack(attackerEl, targetEl);
@@ -581,7 +649,7 @@ function playerAttack(targetSide){
   let newVal = curEnemy + added;
   if(!Number.isFinite(newVal)) newVal = 0;
 
-  const destroyThreshold = getDestroyThreshold(true); // player is attacker
+  const destroyThreshold = getDestroyThreshold(true);
   let destroyed = false;
   if(newVal >= destroyThreshold){
     newVal = 0;
@@ -610,17 +678,18 @@ function playerAttack(targetSide){
   if(!checkWinLose()) setTimeout(()=> enemyTurn(), 650);
 }
 
-/* ---------- enemy turn (updated) ---------- */
+/* ---------- enemy turn (updated to use new skill types; no extra SE for skill usage) ---------- */
 function enemyTurn(){
   const alivePlayer = ['left','right'].filter(s => toNum(gameState.player[s]) > 0);
   const aliveEnemy = ['left','right'].filter(s => toNum(gameState.enemy[s]) > 0);
 
   if(alivePlayer.length === 0 || aliveEnemy.length === 0) return;
 
-  // --- enemy pre-action: consider using skills (simple AI with cooldowns & probabilities) ---
+  // enemy tries to use skills (cooldowns and probabilities)
   (gameState.enemySkills || []).forEach(skill => {
     if(skill.remainingCooldown && skill.remainingCooldown > 0) return;
 
+    // HEAL
     if(skill.id === 'heal'){
       const damaged = ['left','right'].filter(k => toNum(gameState.enemy[k]) > 0 && toNum(gameState.enemy[k]) < MAX_VALUE);
       if(damaged.length > 0 && Math.random() < 0.6){
@@ -629,20 +698,21 @@ function enemyTurn(){
         gameState.enemy[r] = Math.min(MAX_VALUE, toNum(gameState.enemy[r]) + amount);
         const el = hands[r === 'left' ? 'enemyLeft' : 'enemyRight'];
         showDamage(el, amount, '#ff9e9e');
-        playSE('skill', 0.6);
         skill.remainingCooldown = 2;
+        messageArea.textContent = `敵が ${skill.name} を使用した`;
       }
     }
 
+    // DOUBLE
     if(skill.id === 'double'){
       if(Math.random() < 0.35){
         gameState.enemyDoubleMultiplier = 1 + skill.level;
-        messageArea.textContent = `敵が ${skill.name} を発動した！次の攻撃が×${gameState.enemyDoubleMultiplier}`;
-        playSE('skill', 0.6);
         skill.remainingCooldown = 2;
+        messageArea.textContent = `敵が ${skill.name} を構えた`;
       }
     }
 
+    // REGEN (enemy passive healing)
     if(skill.id === 'regen'){
       const candidates = ['left','right'].filter(k => toNum(gameState.enemy[k]) > 0 && toNum(gameState.enemy[k]) < MAX_VALUE);
       for(let i=0;i<skill.level;i++){
@@ -652,29 +722,60 @@ function enemyTurn(){
         const el = hands[r === 'left' ? 'enemyLeft' : 'enemyRight'];
         showDamage(el, 1, '#ff9e9e');
       }
-      // regen passive-like: no cooldown
+      // regen has no cooldown
     }
 
+    // FORTIFY
     if(skill.id === 'fortify' && Math.random() < 0.25){
       const duration = 2 * skill.level;
       applyEnemyTurnBuff('fortify', skill.level, duration);
-      messageArea.textContent = `敵が ${skill.name} を構えた（防御+${skill.level} / ${duration}ターン）`;
-      playSE('skill', 0.6);
       skill.remainingCooldown = 3;
+      messageArea.textContent = `敵が ${skill.name} を構えた`;
     }
 
+    // CHAIN (enemy buff)
     if(skill.id === 'chain' && Math.random() < 0.25){
       applyEnemyTurnBuff('chain', skill.level, 1);
       const tb = gameState.enemyTurnBuffs[gameState.enemyTurnBuffs.length - 1];
       if(tb) tb.payload = { type:'chainBoost', value: skill.level };
-      playSE('skill', 0.6);
       skill.remainingCooldown = 2;
+      messageArea.textContent = `敵が ${skill.name} を準備`;
     }
+
+    // DISRUPT (enemy active: reduce player's hand)
+    if(skill.id === 'disrupt' && Math.random() < 0.35){
+      const candidates = ['left','right'].filter(k => toNum(gameState.player[k]) > 0);
+      if(candidates.length > 0){
+        const target = candidates[rand(0, candidates.length-1)];
+        const amount = 1 + skill.level;
+        const cur = toNum(gameState.player[target]);
+        let newVal = cur - amount;
+        if(newVal <= 0){
+          newVal = 0;
+        }
+        gameState.player[target] = Math.max(0, newVal);
+        const el = hands[target === 'left' ? 'playerLeft' : 'playerRight'];
+        // show negative popup
+        showPopupText(el, `-${amount}`, '#ffb86b');
+        skill.remainingCooldown = 2;
+        messageArea.textContent = `敵が ${skill.name} を使用した`;
+      }
+    }
+
+    // TEAMPOWER (enemy applies team buff)
+    if(skill.id === 'teamPower' && Math.random() < 0.2){
+      const duration = 2 * skill.level;
+      applyEnemyTurnBuff('teamPower', skill.level, duration);
+      skill.remainingCooldown = 3;
+      messageArea.textContent = `敵が ${skill.name} を使用（味方全体強化）`;
+    }
+
+    // COUNTER (enemy event-type handled after being attacked in this turn's logic)
   });
 
   updateEnemySkillUI();
 
-  // --- attack ---
+  // attack
   const from = aliveEnemy[rand(0,aliveEnemy.length-1)];
   const to = alivePlayer[rand(0,alivePlayer.length-1)];
 
@@ -687,18 +788,17 @@ function enemyTurn(){
   let attackValue = toNum(gameState.enemy[from]);
   attackValue += computeEnemyAttackBonus(from);
 
-  // reduce by player's guard/buffs
   const reduction = computeEnemyAttackReduction();
   attackValue = Math.max(0, attackValue - reduction);
 
-  // multiplier from enemy double
   const multiplier = gameState.enemyDoubleMultiplier || 1;
   gameState.enemyDoubleMultiplier = 1;
   attackValue = attackValue * multiplier;
 
-  // apply enemy chain buff if any
+  // enemy turn buffs chain
   gameState.enemyTurnBuffs.forEach(tb => {
     if(tb.payload && tb.payload.type === 'chainBoost') attackValue += tb.payload.value;
+    if(tb.payload && tb.payload.type === 'teamPower') attackValue += tb.payload.value;
   });
 
   showDamage(targetEl, attackValue, '#ffb86b');
@@ -707,8 +807,9 @@ function enemyTurn(){
   let newVal = curPlayer + attackValue;
   if(!Number.isFinite(newVal)) newVal = 0;
 
-  const destroyThreshold = getDestroyThreshold(false); // enemy attacker
-  if(newVal >= destroyThreshold){
+  const destroyThreshold = getDestroyThreshold(false);
+  const wasDestroyed = newVal >= destroyThreshold;
+  if(wasDestroyed){
     newVal = 0;
     animateDestroy(targetEl);
     playSE('destroy', 0.9);
@@ -718,7 +819,20 @@ function enemyTurn(){
 
   gameState.player[to] = newVal;
 
-  // enemy revenge handling (if assigned)
+  // If player has COUNTER (event) equipped, reflect to attacker
+  if(hasEquipped('counter')){
+    const lvl = getEquippedLevel('counter');
+    if(lvl > 0 && toNum(gameState.player[to]) > 0){ // only reflect if player is still alive in that hand
+      // reflect simple: add lvl to attacking enemy hand
+      const curE = toNum(gameState.enemy[from]);
+      gameState.enemy[from] = Math.min(MAX_VALUE, curE + lvl);
+      const eEl = hands[from === 'left' ? 'enemyLeft' : 'enemyRight'];
+      showPopupText(eEl, `+${lvl}`, '#ffd166');
+      messageArea.textContent = `カウンター！敵の手に +${lvl}`;
+    }
+  }
+
+  // enemy revenge handling if any
   (gameState.enemySkills || []).forEach(s => {
     if(s.id === 'revenge'){
       ['left','right'].forEach(side => {
@@ -728,13 +842,12 @@ function enemyTurn(){
           const el = hands[side === 'left' ? 'enemyLeft' : 'enemyRight'];
           showDamage(el, amount, '#ff9e9e');
           messageArea.textContent = `敵の ${s.name} が発動した！`;
-          playSE('skill', 0.7);
         }
       });
     }
   });
 
-  // tick buffs and cooldowns
+  // tick buffs & cooldowns
   tickTurnBuffs();
   tickEnemyTurnBuffs();
 
@@ -744,10 +857,12 @@ function enemyTurn(){
   checkWinLose();
 }
 
-/* ---------- pending active ---------- */
+/* ---------- pending active wrapper for player heal ---------- */
 function applyPendingActiveOnPlayerWrapper(side){
   applyPendingActiveOnPlayer(side);
 }
+
+/* ---------- pending active wrapper for player->enemy actions handled in clickEnemyHand ---------- */
 
 /* ---------- helper ---------- */
 function clearHandSelection(){
@@ -783,7 +898,7 @@ function checkWinLose(){
   return false;
 }
 
-/* ---------- reward selection (unchanged) ---------- */
+/* ---------- reward selection ---------- */
 function showRewardSelection(){
   const unlockedIds = (gameState.unlockedSkills || []).map(u=>u.id);
   const notUnlocked = SKILL_POOL.filter(s => !unlockedIds.includes(s.id));
@@ -864,6 +979,13 @@ function selectHand(side){
 function clickEnemyHand(side){
   if(skillSelectArea && skillSelectArea.children.length > 0){ messageArea.textContent = 'まず装備を確定してください'; return; }
   if(!gameState.playerTurn) return;
+
+  // if pending active is disrupt, handle that on enemy click
+  if(gameState.pendingActiveUse && gameState.pendingActiveUse.id === 'disrupt'){
+    applyPendingActiveOnEnemy(side);
+    return;
+  }
+
   if(!selectedHand){ messageArea.textContent = '攻撃する手を選んでください'; return; }
   if(toNum(gameState.enemy[side]) === 0){ messageArea.textContent = 'その敵の手は既に0です'; return; }
 
