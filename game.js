@@ -1158,7 +1158,7 @@ function showBossRewardSelection(){
   wrap.className = 'skill-choices';
 
   const options = [
-    { key:'playerThreshold', label:`指の最大値 +1 （現在 ${gameState.baseStats.playerThreshold}）` },
+    { key:'playerThreshold', label:`指の閾値 +1 （現在 ${gameState.baseStats.playerThreshold}）` },
     { key:'baseAttack', label:`基礎攻撃力 +1 （現在 ${gameState.baseStats.baseAttack}）` },
     { key:'baseDefense', label:`基礎防御力 +1 （現在 ${gameState.baseStats.baseDefense}）` }
   ];
@@ -1344,7 +1344,7 @@ function refreshOverlayContent(owner, hand){
   // build content
   let html = `<div style="font-weight:800; margin-bottom:6px">${isEnemy ? '敵' : 'あなた'} — ${hand === 'left' ? '左手' : '右手'}</div>`;
   html += `<div>現在値: <b>${value}</b></div>`;
-  html += `<div>最大値: <b>${destroyThreshold}</b> ${pierceInfo}</div>`;
+  html += `<div>閾値（想定攻撃元に対して）: <b>${destroyThreshold}</b> ${pierceInfo}</div>`;
   html += `<div style="margin-top:6px; font-weight:700">${remText}</div>`;
   html += `<div style="margin-top:6px; color:#ccc">${sampleText}</div>`;
   if(buffs.length > 0){
