@@ -125,10 +125,22 @@ h1{ margin:6px 0 12px; font-size:22px; }
 .skill-active button{ padding:6px 10px; border-radius:8px; border:none; background:#4a90e2; color:white; cursor:pointer }
 .skill-active button.used{ background:#666; cursor:default; opacity:0.7 }
 
+/* boss ability area */
+#bossAbilityArea{ text-align:center; }
+
 /* minor */
 hr{ border:none; height:1px; background:linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)); margin:12px 0 }
 #message{ margin-top:12px; min-height:30px; font-weight:600; text-align:center }
+
 /* rarity badges / borders */
 .rarity-common { border:2px solid rgba(255,255,255,0.06); }
 .rarity-rare   { border:2px solid #4aa3ff; box-shadow: 0 6px 18px rgba(74,163,255,0.08); }
 .rarity-epic   { border:2px solid #c26bff; box-shadow: 0 10px 28px rgba(194,107,255,0.12); }
+
+/* responsiveness */
+@media (max-width:520px){
+  .hands{ gap:18px }
+  .hand{ width:92px; height:92px; line-height:92px; font-size:30px }
+  .hand-wrapper{ width:110px }
+  .container{ padding:12px }
+}
