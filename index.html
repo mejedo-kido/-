@@ -70,12 +70,21 @@
           <div class="hand" id="enemy-right"></div>
           <div class="mini-bar"><div id="enemy-right-bar" class="mini-fill enemy-fill"></div></div>
         </div>
+
+        <!-- 第3の手（ボス能力で出現） -->
+        <div class="hand-wrapper" id="enemy-third-wrapper" style="display:none;">
+          <div class="hand" id="enemy-third"></div>
+          <div class="mini-bar"><div id="enemy-third-bar" class="mini-fill enemy-fill"></div></div>
+        </div>
       </div>
 
       <!-- 敵スキル表示エリア -->
       <div id="enemySkillArea" style="margin-top:8px; font-size:14px; color:#ff9e9e; min-height:22px; opacity:0.95;">
         敵スキル: —
       </div>
+
+      <!-- ボス専用能力表示エリア（任意） -->
+      <div id="bossAbilityArea" style="margin-top:6px; font-size:13px; color:#ffd166; min-height:18px; opacity:0.95;"></div>
     </div>
 
     <hr />
@@ -109,5 +118,22 @@
   </div>
 
   <script src="game.js"></script>
+  <script>
+    // small helper: show/hide enemy third wrapper based on JS state (if game.js sets gameState.enemyHasThirdHand)
+    // game.js already guards missing DOM elements; this is just a nicety to keep UI synced when game toggles third hand.
+    // game.js sets gameState.enemyHasThirdHand; call this periodically or after updateUI as desired.
+    (function(){
+      // observe a small interval to toggle display when third hand appears — harmless and lightweight.
+      setInterval(()=> {
+        try {
+          const wrapper = document.getElementById('enemy-third-wrapper');
+          if(!wrapper) return;
+          const fd = window.__FD && window.__FD.state;
+          if(fd && fd.enemyHasThirdHand) wrapper.style.display = 'flex';
+          else wrapper.style.display = 'none';
+        } catch(e){}
+      }, 250);
+    })();
+  </script>
 </body>
 </html>
