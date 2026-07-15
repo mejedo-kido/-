@@ -1,0 +1,10 @@
+[
+  {"name":"Common","rank":0,"color":"#9ca3af","multiplier":1,"extraStats":0,"sell":8,"material":1,"weight":520,"fusion":{"success":94,"great":1,"fail":5}},
+  {"name":"Magic","rank":1,"color":"#38bdf8","multiplier":1.25,"extraStats":1,"sell":18,"material":2,"weight":260,"fusion":{"success":88,"great":2,"fail":10}},
+  {"name":"Rare","rank":2,"color":"#fde047","multiplier":1.6,"extraStats":1,"sell":42,"material":4,"weight":130,"fusion":{"success":80,"great":5,"fail":15}},
+  {"name":"Epic","rank":3,"color":"#c084fc","multiplier":2.05,"extraStats":2,"sell":96,"material":8,"weight":62,"fusion":{"success":70,"great":10,"fail":20}},
+  {"name":"Legendary","rank":4,"color":"#fb923c","multiplier":2.7,"extraStats":2,"sell":220,"material":16,"weight":22,"fusion":{"success":58,"great":17,"fail":25}},
+  {"name":"Mythic","rank":5,"color":"#ef4444","multiplier":3.55,"extraStats":3,"sell":520,"material":32,"weight":7,"fusion":{"success":45,"great":25,"fail":30}},
+  {"name":"God","rank":6,"color":"#ffffff","multiplier":4.8,"extraStats":4,"sell":1300,"material":72,"weight":2,"fusion":{"success":30,"great":35,"fail":35}},
+  {"name":"Eternal","rank":7,"color":"#050505","multiplier":6.6,"extraStats":5,"sell":3600,"material":160,"weight":0.35}
+]

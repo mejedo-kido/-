@@ -1,0 +1,8 @@
+[
+  {"name":"スライム","emoji":"🟢","level":1,"hp":90,"attack":5,"dropMultiplier":1.1,"rareMultiplier":1},
+  {"name":"ゴブリン","emoji":"👺","level":3,"hp":180,"attack":12,"dropMultiplier":1.25,"rareMultiplier":1.12},
+  {"name":"オーク","emoji":"🐗","level":7,"hp":420,"attack":28,"dropMultiplier":1.5,"rareMultiplier":1.3},
+  {"name":"ドラゴン","emoji":"🐉","level":14,"hp":1100,"attack":65,"dropMultiplier":2,"rareMultiplier":1.65},
+  {"name":"魔王","emoji":"😈","level":25,"hp":2800,"attack":140,"dropMultiplier":2.7,"rareMultiplier":2.15},
+  {"name":"古代神","emoji":"🌌","level":40,"hp":7200,"attack":310,"dropMultiplier":3.8,"rareMultiplier":3}
+]

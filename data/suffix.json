@@ -1,0 +1,7 @@
+[
+  {"name":"剣","slot":"weapon","stats":{"attack":14}}, {"name":"斧","slot":"weapon","stats":{"attack":18,"critDamage":10}}, {"name":"槍","slot":"weapon","stats":{"attack":15,"accuracy":4}},
+  {"name":"弓","slot":"weapon","stats":{"attack":12,"critRate":4}}, {"name":"短剣","slot":"weapon","stats":{"attack":10,"attackSpeed":8}}, {"name":"杖","slot":"weapon","stats":{"attack":9,"mp":35,"fireDamage":5}},
+  {"name":"盾","slot":"shield","stats":{"defense":15,"block":6}}, {"name":"鎧","slot":"armor","stats":{"defense":18,"hp":70}}, {"name":"兜","slot":"armor","stats":{"defense":10,"hp":35}},
+  {"name":"手袋","slot":"armor","stats":{"defense":7,"attackSpeed":4}}, {"name":"靴","slot":"armor","stats":{"defense":6,"evasion":6}}, {"name":"首飾り","slot":"accessory","stats":{"hp":30,"dropRate":5}},
+  {"name":"指輪","slot":"accessory","stats":{"critRate":3,"goldRate":5}}
+]
