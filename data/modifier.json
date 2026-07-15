@@ -1,0 +1,9 @@
+[
+  {"name":"炎の","stats":{"fireDamage":9},"variable":["attack","critDamage"]}, {"name":"氷の","stats":{"iceDamage":9},"variable":["defense","evasion"]},
+  {"name":"雷の","stats":{"lightningDamage":9},"variable":["attackSpeed","critRate"]}, {"name":"生命の","stats":{"hp":60},"variable":["lifeSteal","defense"]},
+  {"name":"守護の","stats":{"defense":10},"variable":["hp","block"]}, {"name":"狂戦士の","stats":{"attack":10,"critDamage":15},"variable":["critRate","attackSpeed"]},
+  {"name":"狩人の","stats":{"critRate":4,"accuracy":6},"variable":["dropRate","attack"]}, {"name":"毒の","stats":{"poisonDamage":10},"variable":["attackSpeed","darkDamage"]},
+  {"name":"吸血の","stats":{"lifeSteal":3},"variable":["attack","hp"]}, {"name":"迅雷の","stats":{"attackSpeed":8},"variable":["lightningDamage","critRate"]},
+  {"name":"知識の","stats":{"mp":45,"expRate":5},"variable":["dropRate","goldRate"]}, {"name":"王の","stats":{"attack":6,"defense":6,"hp":45},"variable":["goldRate","critDamage"]},
+  {"name":"財宝の","stats":{"dropRate":10,"goldRate":12},"variable":["expRate","accuracy"]}
+]

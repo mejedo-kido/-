@@ -1,0 +1,8 @@
+[
+  {"name":"鋭利な","stats":{"attack":8,"critRate":2}}, {"name":"頑丈な","stats":{"defense":7,"hp":35}},
+  {"name":"神聖な","stats":{"lightDamage":8,"lifeSteal":1}}, {"name":"混沌の","stats":{"attack":4,"defense":4,"hp":25,"critDamage":8}},
+  {"name":"古代の","stats":{"attack":5,"defense":5,"hp":40,"dropRate":2}}, {"name":"英雄の","stats":{"attackSpeed":4,"critDamage":12}},
+  {"name":"暴風の","stats":{"attackSpeed":7,"evasion":3}}, {"name":"雷鳴の","stats":{"lightningDamage":10,"attackSpeed":2}},
+  {"name":"灼熱の","stats":{"fireDamage":11,"attack":3}}, {"name":"凍結の","stats":{"iceDamage":10,"defense":3}},
+  {"name":"深淵の","stats":{"darkDamage":12,"lifeSteal":2}}
+]
