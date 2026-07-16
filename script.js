@@ -144,7 +144,7 @@ class Battle {
     const isCritical = Math.random() * 100 < stats.critRate;
     const damage = Math.max(1, Math.round(stats.attack * (isCritical ? stats.critDamage / 100 : 1)));
     this.enemy.hp -= damage;
-    this.app.ui.log(`攻撃 ${damage}${isCritical ? ' CRITICAL' : ''} ダメージ`);
+    this.app.ui.showDamage(damage, isCritical);
     if (this.enemy.hp <= 0) this.defeat();
     this.app.ui.render();
   }
@@ -179,23 +179,59 @@ class FusionManager {
     const selected = this.app.inventory.items.filter((item) => this.app.inventory.selected.has(item.id));
     if (selected.length !== 5) return this.app.ui.log('合成は同一レアリティ・同一装備種を5個選択してください。');
     const [first] = selected;
-    if (!selected.every((item) => item.rarity === first.rarity && item.suffix === first.suffix)) {
+    if (!selected.every((item) => item.rarity === first.rarity && item.slot === first.slot)) {
       return this.app.ui.log('同じレアリティ・同じ装備種のみ合成可能です。');
     }
     const sourceRarity = this.app.data.rarity.find((rarity) => rarity.name === first.rarity);
-    if (!sourceRarity.fusion) return this.app.ui.log('これ以上合成できません。');
+    if (!sourceRarity?.fusion) return this.app.ui.log('これ以上合成できません。');
 
+    const cost = this.cost(sourceRarity.rank);
+    if (this.app.player.gold < cost.gold || this.app.player.materials < cost.materials) {
+      return this.app.ui.log(`合成素材が不足しています（必要: ${cost.gold}G / 素材${cost.materials}）。`);
+    }
+
+    this.app.player.gold -= cost.gold;
+    this.app.player.materials -= cost.materials;
     this.app.inventory.remove(selected.map((item) => item.id));
     const roll = Math.random() * 100;
-    if (roll < sourceRarity.fusion.fail) { this.app.ui.effect('失敗...', false); this.app.ui.render(); return; }
+    if (roll < sourceRarity.fusion.fail) {
+      this.app.ui.effect('合成失敗...', false, sourceRarity.rank);
+      this.app.ui.log(`${first.rarity} ${SLOTS[first.slot]}の合成に失敗しました。`);
+      this.app.save.auto();
+      this.app.ui.render();
+      return;
+    }
 
     const jump = roll < sourceRarity.fusion.fail + sourceRarity.fusion.great ? 2 : 1;
     const resultRarity = this.app.data.rarity[Math.min(sourceRarity.rank + jump, this.app.data.rarity.length - 1)];
-    const result = this.app.generator.generate(first.level + 2, { rareMultiplier: 1 }, resultRarity);
+    const resultLevel = Math.max(...selected.map((item) => item.level)) + 2 + jump;
+    const result = this.app.generator.generate(resultLevel, { level: 0, rareMultiplier: 1 }, resultRarity);
+    result.slot = first.slot;
+    result.name = this.inheritName(result, first.slot);
+    result.stats = this.mergeStats(result, selected, resultRarity.multiplier, jump);
+    result.value += Math.round(selected.reduce((sum, item) => sum + item.value, 0) * 0.35);
     this.app.inventory.add([result]);
-    this.app.ui.effect(jump === 2 ? '超成功!!' : '成功!', jump === 2);
+    this.app.ui.effect(jump === 2 ? '大成功!!' : '合成成功!', jump === 2, result.rank);
+    this.app.ui.log(`合成で <b style="color:${result.color}">${result.rarity}</b> ${result.name} を生成しました。`);
     this.app.ui.logDrop(result);
+    this.app.save.auto();
     this.app.ui.render();
+  }
+  cost(rank) { return { gold: 80 * (rank + 1) ** 2, materials: 5 * (rank + 1) }; }
+  inheritName(item, slot) {
+    const suffix = this.app.data.suffix.find((entry) => entry.slot === slot)?.name ?? item.suffix;
+    item.suffix = suffix;
+    return `${item.prefix}${item.modifier}${suffix}`;
+  }
+  mergeStats(result, selected, rarityMultiplier, jump) {
+    const stats = { ...result.stats };
+    const keys = new Set(selected.flatMap((item) => Object.keys(item.stats)));
+    keys.forEach((key) => {
+      const average = selected.reduce((sum, item) => sum + (item.stats[key] ?? 0), 0) / selected.length;
+      const inherited = Math.round(average * (1.18 + jump * 0.12) * Math.sqrt(rarityMultiplier));
+      stats[key] = Math.max(stats[key] ?? 0, inherited);
+    });
+    return stats;
   }
 }
 
@@ -227,13 +263,33 @@ class SaveManager {
 
 class EffectManager {
   constructor(root) { this.root = root; }
-  burst(text, big = false) {
+  burst(text, big = false, rank = 0) {
     const element = document.createElement('div');
-    element.className = `burst ${big ? 'burst-big' : ''}`;
+    element.className = `burst rarity-burst rank-${rank} ${big ? 'burst-big' : ''}`;
     element.textContent = text;
     this.root.append(element);
-    if (big) document.body.classList.add('shake');
-    setTimeout(() => { element.remove(); document.body.classList.remove('shake'); }, 950);
+    const particleCount = Math.min(8 + rank * 6, 56);
+    for (let i = 0; i < particleCount; i += 1) this.particle(rank, i, particleCount);
+    if (big || rank >= 4) document.body.classList.add('shake');
+    setTimeout(() => { element.remove(); document.body.classList.remove('shake'); }, 1200 + rank * 90);
+  }
+  particle(rank, index, total) {
+    const element = document.createElement('i');
+    const angle = (360 / total) * index + Math.random() * 18;
+    const distance = 80 + rank * 24 + Math.random() * 90;
+    element.className = `loot-particle rank-${rank}`;
+    element.style.setProperty('--x', `${Math.cos(angle * Math.PI / 180) * distance}px`);
+    element.style.setProperty('--y', `${Math.sin(angle * Math.PI / 180) * distance}px`);
+    element.style.setProperty('--delay', `${Math.random() * 0.16}s`);
+    this.root.append(element);
+    setTimeout(() => element.remove(), 1200 + rank * 90);
+  }
+  damage(damage, critical = false) {
+    const element = document.createElement('div');
+    element.className = `damage-pop ${critical ? 'critical' : ''}`;
+    element.textContent = `${damage}${critical ? ' CRITICAL' : ''}`;
+    this.root.append(element);
+    setTimeout(() => element.remove(), 700);
   }
 }
 
@@ -334,8 +390,8 @@ class UIManager {
   }
   log(text) { this.$('dropLog').insertAdjacentHTML('afterbegin', `<div class="log-entry">${text}</div>`); }
   logDrop(item) {
-    this.log(`<b style="color:${item.color}">${item.rarity}</b> ${item.name} がドロップ`);
-    if (item.rank >= 2) this.effect(item.rarity, item.rank >= 6);
+    this.log(`<span class="drop-entry rarity-${item.rarity}"><b style="color:${item.color}">${item.rarity}</b> ${item.name} がドロップ</span>`);
+    if (item.rank >= 1) this.effect(item.rarity, item.rank >= 5, item.rank);
   }
   sell(maxRarity) {
     const rank = this.app.data.rarity.find((rarity) => rarity.name === maxRarity).rank;
@@ -355,7 +411,8 @@ class UIManager {
     this.render();
     this.log(`${ids.length}個分解しました。`);
   }
-  effect(text, big) { this.app.effects.burst(text, big); }
+  showDamage(damage, critical) { this.app.effects.damage(damage, critical); }
+  effect(text, big, rank = 0) { this.app.effects.burst(text, big, rank); }
 }
 
 class App {
