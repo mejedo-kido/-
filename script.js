@@ -177,17 +177,20 @@ class FusionManager {
   constructor(app) { this.app = app; }
   fuse() {
     const selected = this.app.inventory.items.filter((item) => this.app.inventory.selected.has(item.id));
-    if (selected.length !== 5) return this.app.ui.log('合成は同一レアリティ・同一装備種を5個選択してください。');
+    const result = this.fuseItems(selected);
+    if (result.ok) this.app.ui.render();
+    return result.ok;
+  }
+  fuseItems(selected, { silent = false } = {}) {
+    if (selected.length !== 5) return this.fail('合成は同一レアリティを5個選択してください。', silent);
     const [first] = selected;
-    if (!selected.every((item) => item.rarity === first.rarity && item.slot === first.slot)) {
-      return this.app.ui.log('同じレアリティ・同じ装備種のみ合成可能です。');
-    }
+    if (!selected.every((item) => item.rarity === first.rarity)) return this.fail('同じレアリティのみ合成可能です。', silent);
     const sourceRarity = this.app.data.rarity.find((rarity) => rarity.name === first.rarity);
-    if (!sourceRarity?.fusion) return this.app.ui.log('これ以上合成できません。');
+    if (!sourceRarity?.fusion) return this.fail('これ以上合成できません。', silent);
 
     const cost = this.cost(sourceRarity.rank);
     if (this.app.player.gold < cost.gold || this.app.player.materials < cost.materials) {
-      return this.app.ui.log(`合成素材が不足しています（必要: ${cost.gold}G / 素材${cost.materials}）。`);
+      return this.fail(`合成素材が不足しています（必要: ${cost.gold}G / 素材${cost.materials}）。`, silent);
     }
 
     this.app.player.gold -= cost.gold;
@@ -195,27 +198,55 @@ class FusionManager {
     this.app.inventory.remove(selected.map((item) => item.id));
     const roll = Math.random() * 100;
     if (roll < sourceRarity.fusion.fail) {
-      this.app.ui.effect('合成失敗...', false, sourceRarity.rank);
-      this.app.ui.log(`${first.rarity} ${SLOTS[first.slot]}の合成に失敗しました。`);
+      if (!silent) this.app.ui.effect('合成失敗...', false, sourceRarity.rank);
+      this.app.ui.log(`${first.rarity}の合成に失敗しました。`);
       this.app.save.auto();
-      this.app.ui.render();
-      return;
+      return { ok: true, created: null };
     }
 
     const jump = roll < sourceRarity.fusion.fail + sourceRarity.fusion.great ? 2 : 1;
     const resultRarity = this.app.data.rarity[Math.min(sourceRarity.rank + jump, this.app.data.rarity.length - 1)];
     const resultLevel = Math.max(...selected.map((item) => item.level)) + 2 + jump;
+    const resultSlot = this.pickResultSlot(selected);
     const result = this.app.generator.generate(resultLevel, { level: 0, rareMultiplier: 1 }, resultRarity);
-    result.slot = first.slot;
-    result.name = this.inheritName(result, first.slot);
+    result.slot = resultSlot;
+    result.name = this.inheritName(result, resultSlot);
     result.stats = this.mergeStats(result, selected, resultRarity.multiplier, jump);
     result.value += Math.round(selected.reduce((sum, item) => sum + item.value, 0) * 0.35);
     this.app.inventory.add([result]);
-    this.app.ui.effect(jump === 2 ? '大成功!!' : '合成成功!', jump === 2, result.rank);
+    if (!silent) this.app.ui.effect(jump === 2 ? '大成功!!' : '合成成功!', jump === 2, result.rank);
     this.app.ui.log(`合成で <b style="color:${result.color}">${result.rarity}</b> ${result.name} を生成しました。`);
     this.app.ui.logDrop(result);
     this.app.save.auto();
+    return { ok: true, created: result };
+  }
+  fail(message, silent) {
+    if (!silent) this.app.ui.log(message);
+    return { ok: false, message };
+  }
+  autoFuse(rarityName) {
+    const rarity = this.app.data.rarity.find((entry) => entry.name === rarityName);
+    if (!rarity) return this.app.ui.log('自動合成するレア度を選択してください。');
+    if (!rarity.fusion) return this.app.ui.log(`${rarity.name}はこれ以上合成できません。`);
+    let count = 0;
+    while (true) {
+      const candidates = this.app.inventory.items.filter((item) => item.rarity === rarity.name)
+        .sort((a, b) => a.rank - b.rank || a.level - b.level || a.value - b.value || a.createdAt - b.createdAt);
+      if (candidates.length < 5) break;
+      const result = this.fuseItems(candidates.slice(0, 5), { silent: true });
+      if (!result.ok) {
+        if (count === 0) this.app.ui.log(result.message);
+        break;
+      }
+      count += 1;
+    }
+    this.app.inventory.selected.clear();
     this.app.ui.render();
+    this.app.ui.log(count ? `${rarity.name}を${count}回自動合成しました。` : `${rarity.name}は5個未満のため自動合成できません。`);
+  }
+  pickResultSlot(selected) {
+    const counts = selected.reduce((map, item) => map.set(item.slot, (map.get(item.slot) ?? 0) + 1), new Map());
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? selected[0].slot;
   }
   cost(rank) { return { gold: 80 * (rank + 1) ** 2, materials: 5 * (rank + 1) }; }
   inheritName(item, slot) {
@@ -248,6 +279,14 @@ class SaveManager {
       inventory: this.app.inventory.items,
       wave: this.app.battle.wave
     }));
+  }
+  reset() {
+    localStorage.removeItem(this.key);
+    this.app.player = new Player();
+    this.app.inventory = new Inventory(this.app.data.dropTable.maxInventory);
+    this.app.drop = new DropManager(this.app);
+    this.app.battle = new Battle(this.app);
+    this.app.fusion = new FusionManager(this.app);
   }
   load() {
     const saved = JSON.parse(localStorage.getItem(this.key) ?? 'null');
@@ -304,10 +343,14 @@ class UIManager {
     this.$('attackButton').onclick = () => this.app.battle.attack();
     this.$('clearLogButton').onclick = () => { this.$('dropLog').innerHTML = ''; };
     ['searchInput', 'sortSelect', 'filterSelect'].forEach((id) => { this.$(id).oninput = () => this.renderInventory(); });
+    this.$('selectRarityButton').onclick = () => this.toggleRaritySelection(true);
+    this.$('deselectRarityButton').onclick = () => this.toggleRaritySelection(false);
     document.querySelectorAll('[data-sell]').forEach((button) => { button.onclick = () => this.sell(button.dataset.sell); });
     this.$('salvageButton').onclick = () => this.salvage();
     this.$('fusionButton').onclick = () => this.app.fusion.fuse();
+    this.$('autoFusionButton').onclick = () => this.app.fusion.autoFuse(this.$('bulkRaritySelect').value);
     this.$('saveButton').onclick = () => { this.app.save.auto(); this.log('保存しました。'); };
+    this.$('resetButton').onclick = () => this.reset();
   }
   render() { this.renderEnemy(); this.renderEquipment(); this.renderInventory(); this.renderStats(); this.renderWallet(); }
   renderWallet() { this.$('goldText').textContent = this.app.player.gold; this.$('materialText').textContent = this.app.player.materials; }
@@ -341,6 +384,9 @@ class UIManager {
     const filter = this.$('filterSelect').value;
     if (this.$('filterSelect').options.length === 1) {
       this.app.data.rarity.forEach((rarity) => this.$('filterSelect').add(new Option(rarity.name, rarity.name)));
+    }
+    if (this.$('bulkRaritySelect').options.length === 0) {
+      this.app.data.rarity.forEach((rarity) => this.$('bulkRaritySelect').add(new Option(rarity.name, rarity.name)));
     }
     let items = [...this.app.inventory.items].filter((item) =>
       (filter === 'all' || item.rarity === filter) && item.name.toLowerCase().includes(query)
@@ -400,6 +446,26 @@ class UIManager {
     this.app.inventory.remove(ids);
     this.render();
     this.log(`${ids.length}個売却しました。`);
+  }
+  toggleRaritySelection(select) {
+    const rarity = this.$('bulkRaritySelect').value;
+    let count = 0;
+    this.app.inventory.items.forEach((item) => {
+      if (item.rarity !== rarity) return;
+      select ? this.app.inventory.selected.add(item.id) : this.app.inventory.selected.delete(item.id);
+      count += 1;
+    });
+    this.renderInventory();
+    this.log(`${rarity}を${count}個${select ? '選択' : '選択解除'}しました。`);
+  }
+  reset() {
+    if (!confirm('セーブデータ・所持品・装備・進行状況をリセットします。よろしいですか？')) return;
+    this.app.save.reset();
+    this.$('dropLog').innerHTML = '';
+    this.$('selectedHint').textContent = '未選択';
+    this.$('itemDetail').textContent = 'インベントリまたは装備をクリックしてください。';
+    this.render();
+    this.log('ゲームデータをリセットしました。');
   }
   salvage() {
     const ids = [...this.app.inventory.selected];

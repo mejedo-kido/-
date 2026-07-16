@@ -32,7 +32,7 @@
       </section>
 
       <section class="log-panel glass-card">
-        <div class="section-title"><span>Drop Log</span><button id="clearLogButton" class="ghost-button">Clear</button></div>
+        <div class="section-title"><span>Drop Log</span><div class="header-actions"><button id="resetButton" class="ghost-button danger-button">Reset</button><button id="clearLogButton" class="ghost-button">Clear</button></div></div>
         <div id="dropLog" class="drop-log"></div>
       </section>
 
@@ -52,12 +52,16 @@
             <option value="value">売値順</option>
           </select>
           <select id="filterSelect"><option value="all">全レア</option></select>
+          <select id="bulkRaritySelect" aria-label="一括操作するレア度"></select>
         </div>
         <div class="bulk-actions">
+          <button id="selectRarityButton" class="ghost-button">指定レア選択</button>
+          <button id="deselectRarityButton" class="ghost-button">指定レア解除</button>
           <button data-sell="Common" class="ghost-button">Common売却</button>
           <button data-sell="Magic" class="ghost-button">Magic以下売却</button>
           <button id="salvageButton" class="ghost-button">選択分解</button>
           <button id="fusionButton" class="accent-button">5個合成</button>
+          <button id="autoFusionButton" class="accent-button">指定レア自動合成</button>
         </div>
         <div id="inventoryList" class="inventory-list"></div>
       </section>
