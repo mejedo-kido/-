@@ -188,23 +188,16 @@ class FusionManager {
     const sourceRarity = this.app.data.rarity.find((rarity) => rarity.name === first.rarity);
     if (!sourceRarity?.fusion) return this.fail('これ以上合成できません。', silent);
 
-    const cost = this.cost(sourceRarity.rank);
-    if (this.app.player.gold < cost.gold || this.app.player.materials < cost.materials) {
-      return this.fail(`合成素材が不足しています（必要: ${cost.gold}G / 素材${cost.materials}）。`, silent);
-    }
-
-    this.app.player.gold -= cost.gold;
-    this.app.player.materials -= cost.materials;
     this.app.inventory.remove(selected.map((item) => item.id));
-    const roll = Math.random() * 100;
-    if (roll < sourceRarity.fusion.fail) {
+    const outcome = this.rollOutcome(sourceRarity.fusion);
+    if (outcome === 'fail') {
       if (!silent) this.app.ui.effect('合成失敗...', false, sourceRarity.rank);
-      this.app.ui.log(`${first.rarity}の合成に失敗しました。`);
+      this.app.ui.log(`${first.rarity}の合成に失敗しました。素材5個は消失しました。`);
       this.app.save.auto();
       return { ok: true, created: null };
     }
 
-    const jump = roll < sourceRarity.fusion.fail + sourceRarity.fusion.great ? 2 : 1;
+    const jump = outcome === 'great' ? 2 : 1;
     const resultRarity = this.app.data.rarity[Math.min(sourceRarity.rank + jump, this.app.data.rarity.length - 1)];
     const resultLevel = Math.max(...selected.map((item) => item.level)) + 2 + jump;
     const resultSlot = this.pickResultSlot(selected);
@@ -214,11 +207,20 @@ class FusionManager {
     result.stats = this.mergeStats(result, selected, resultRarity.multiplier, jump);
     result.value += Math.round(selected.reduce((sum, item) => sum + item.value, 0) * 0.35);
     this.app.inventory.add([result]);
-    if (!silent) this.app.ui.effect(jump === 2 ? '大成功!!' : '合成成功!', jump === 2, result.rank);
-    this.app.ui.log(`合成で <b style="color:${result.color}">${result.rarity}</b> ${result.name} を生成しました。`);
+    if (!silent) {
+      this.app.ui.effect(jump === 2 ? '超成功!!' : '合成成功!', jump === 2, result.rank);
+      if (jump === 2) this.app.sound.playCue('fusionGreat');
+    }
+    this.app.ui.log(`合成${jump === 2 ? 'が超成功' : 'に成功'}し、<b style="color:${result.color}">${result.rarity}</b> ${result.name} を生成しました。`);
     this.app.ui.logDrop(result);
     this.app.save.auto();
     return { ok: true, created: result };
+  }
+  rollOutcome(fusion) {
+    const roll = Math.random() * 100;
+    if (roll < fusion.success) return 'success';
+    if (roll < fusion.success + fusion.great) return 'great';
+    return 'fail';
   }
   fail(message, silent) {
     if (!silent) this.app.ui.log(message);
@@ -248,7 +250,6 @@ class FusionManager {
     const counts = selected.reduce((map, item) => map.set(item.slot, (map.get(item.slot) ?? 0) + 1), new Map());
     return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? selected[0].slot;
   }
-  cost(rank) { return { gold: 80 * (rank + 1) ** 2, materials: 5 * (rank + 1) }; }
   inheritName(item, slot) {
     const suffix = this.app.data.suffix.find((entry) => entry.slot === slot)?.name ?? item.suffix;
     item.suffix = suffix;
@@ -333,8 +334,26 @@ class EffectManager {
 }
 
 class SoundManager {
-  // No external audio assets are required; WebAudio can be enabled here later.
-  playCue() {}
+  constructor() { this.context = null; }
+  playCue(name) {
+    if (name !== 'fusionGreat') return;
+    const AudioContext = window.AudioContext ?? window.webkitAudioContext;
+    if (!AudioContext) return;
+    this.context ??= new AudioContext();
+    const now = this.context.currentTime;
+    [523.25, 659.25, 783.99, 1046.5].forEach((frequency, index) => {
+      const oscillator = this.context.createOscillator();
+      const gain = this.context.createGain();
+      oscillator.type = index === 3 ? 'triangle' : 'sine';
+      oscillator.frequency.setValueAtTime(frequency, now + index * 0.07);
+      gain.gain.setValueAtTime(0, now + index * 0.07);
+      gain.gain.linearRampToValueAtTime(0.16, now + index * 0.07 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.07 + 0.35);
+      oscillator.connect(gain).connect(this.context.destination);
+      oscillator.start(now + index * 0.07);
+      oscillator.stop(now + index * 0.07 + 0.36);
+    });
+  }
 }
 
 class UIManager {
